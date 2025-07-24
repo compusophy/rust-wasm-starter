@@ -5,17 +5,15 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build-wasm && vite build",
-    "preview": "vite preview",
-    "start": "npm run preview",
-    "build-wasm": "wasm-pack build --target web --out-dir pkg",
-    "serve": "npx serve dist -p $PORT"
+    "preview": "vite preview --port $PORT --host 0.0.0.0",
+    "start": "vite preview --port $PORT --host 0.0.0.0",
+    "build-wasm": "wasm-pack build --target web --out-dir pkg"
   },
   "devDependencies": {
     "vite": "^5.0.0"
   },
   "dependencies": {
     "vite-plugin-wasm": "^3.3.0",
-    "vite-plugin-top-level-await": "^1.4.1",
-    "serve": "^14.2.1"
+    "vite-plugin-top-level-await": "^1.4.1"
   }
 } 

@@ -1,5 +1,5 @@
 [build]
-buildCommand = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && cargo install wasm-pack && npm run build"
+builder = "nixpacks"
 
 [deploy]
 startCommand = "npm start"
