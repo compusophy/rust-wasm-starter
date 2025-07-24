@@ -1,9 +1,9 @@
 [build]
-nixpacksPlan = "nodejs"
+buildCommand = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && cargo install wasm-pack && npm run build"
 
 [deploy]
 startCommand = "npm start"
 healthcheckPath = "/"
 
-[build.environment]
-NIXPACKS_NO_CACHE = "1" 
+[environment]
+NODE_VERSION = "18" 
