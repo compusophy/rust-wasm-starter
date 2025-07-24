@@ -5,8 +5,9 @@ node_modules/
 dist/
 pkg/
 
-# Rust targets
+# Rust targets and lock file
 target/
+Cargo.lock
 
 # OS files
 .DS_Store

@@ -1,11 +1,14 @@
 [phases.setup]
-nixPkgs = ["nodejs_18", "rustc", "cargo", "wasm-pack"]
+nixPkgs = ["nodejs_18", "rustc", "cargo", "wasm-pack", "pkg-config"]
 
 [phases.install]
 cmds = ["npm ci"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = [
+  "cargo generate-lockfile",
+  "npm run build"
+]
 
 [start]
 cmd = "npm start" 

@@ -1,5 +1,5 @@
-# Use official Rust image as base
-FROM rust:1.75 as rust-builder
+# Use latest Rust image
+FROM rust:latest as rust-builder
 
 # Install wasm-pack
 RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -8,10 +8,10 @@ RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 WORKDIR /app
 
 # Copy Rust files
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 COPY src/ ./src/
 
-# Build WASM
+# Build WASM (will regenerate Cargo.lock with correct version)
 RUN wasm-pack build --target web --out-dir pkg
 
 # Use Node.js for the frontend build
