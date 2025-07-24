@@ -25,12 +25,16 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
-# Copy source files and WASM build from previous stage
-COPY . .
+# Copy source files first
+COPY index.html ./
+COPY main.js ./
+COPY vite.config.js ./
+
+# Copy WASM build from rust-builder stage
 COPY --from=rust-builder /app/pkg ./pkg
 
-# Build the frontend
-RUN npm run build
+# Build the frontend (skip wasm build since we already have pkg/)
+RUN npx vite build
 
 # Production stage with simple HTTP server
 FROM node:18-alpine
