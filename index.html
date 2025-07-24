@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust WASM + HTMX + Vite</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 2.5rem;
+        }
+        button {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin: 0.5rem;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background: #ff5252;
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        input {
+            padding: 1rem;
+            border: none;
+            border-radius: 10px;
+            margin: 0.5rem;
+            font-size: 1rem;
+        }
+        .result {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            font-family: monospace;
+            min-height: 3rem;
+        }
+        .demo-section {
+            margin: 2rem 0;
+        }
+        .loading {
+            opacity: 0.6;
+        }
+        .htmx-indicator {
+            opacity: 0;
+            transition: opacity 200ms ease-in;
+        }
+        .htmx-request .htmx-indicator {
+            opacity: 1;
+        }
+        .status {
+            font-size: 0.9rem;
+            margin: 0.5rem 0;
+        }
+        .rust-badge {
+            display: inline-block;
+            background: #ce422b;
+            color: white;
+            padding: 0.3rem 0.6rem;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🦀 Rust WASM + HTMX + Vite <span class="rust-badge">RUST POWERED</span></h1>
+        
+        <div class="status" id="wasm-status">
+            🔄 Loading Rust WASM module...
+        </div>
+        
+        <div class="demo-section">
+            <h3>Greeting Demo <span class="rust-badge">Rust Function</span></h3>
+            <form hx-post="/greet" hx-target="#greet-result" hx-trigger="submit">
+                <input type="text" name="name" placeholder="Enter your name" value="World" required>
+                <button type="submit">
+                    Say Hello!
+                    <span class="htmx-indicator">🔄</span>
+                </button>
+            </form>
+            <div id="greet-result" class="result">
+                Results will appear here...
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h3>Math Demo <span class="rust-badge">Rust Function</span></h3>
+            <form hx-post="/add" hx-target="#math-result" hx-trigger="submit">
+                <input type="number" name="num1" placeholder="First number" value="5" required>
+                <input type="number" name="num2" placeholder="Second number" value="3" required>
+                <button type="submit">
+                    Add Numbers
+                    <span class="htmx-indicator">🔄</span>
+                </button>
+            </form>
+            <div id="math-result" class="result">
+                Results will appear here...
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h3>Message Demo <span class="rust-badge">Rust Function</span></h3>
+            <button hx-post="/message" hx-target="#message-result" hx-trigger="click">
+                Get Message from Rust
+                <span class="htmx-indicator">🔄</span>
+            </button>
+            <div id="message-result" class="result">
+                Results will appear here...
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h3>Development Info</h3>
+            <div class="result">
+                <strong>🦀 Rust Functions:</strong> greet(), add(), get_message()<br>
+                <strong>🔥 Hot Reload:</strong> Modify Rust → run `npm run build-wasm` → auto-refresh<br>
+                <strong>🚀 HTMX:</strong> No JavaScript DOM manipulation needed!<br>
+                <strong>📝 Console:</strong> Check browser console for Rust logs
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html> 
