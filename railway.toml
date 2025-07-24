@@ -1,0 +1,9 @@
+[build]
+nixpacksPlan = "nodejs"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/"
+
+[build.environment]
+NIXPACKS_NO_CACHE = "1" 
