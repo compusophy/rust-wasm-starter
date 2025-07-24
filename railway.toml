@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "serve -s dist -l $PORT"
+startCommand = "serve -s dist -p $PORT"
 healthcheckPath = "/"
 
 [environment]
