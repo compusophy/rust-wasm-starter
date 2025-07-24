@@ -41,14 +41,31 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install serve globally
-RUN npm install -g serve
-
 # Copy built files
 COPY --from=node-builder /app/dist ./dist
+
+# Create simple server script
+RUN echo 'const http = require("http");' > server.js && \
+    echo 'const fs = require("fs");' >> server.js && \
+    echo 'const path = require("path");' >> server.js && \
+    echo 'const port = process.env.PORT || 3000;' >> server.js && \
+    echo 'const server = http.createServer((req, res) => {' >> server.js && \
+    echo '  let filePath = path.join(__dirname, "dist", req.url === "/" ? "index.html" : req.url);' >> server.js && \
+    echo '  const ext = path.extname(filePath);' >> server.js && \
+    echo '  const contentType = {' >> server.js && \
+    echo '    ".html": "text/html", ".js": "application/javascript", ".css": "text/css",' >> server.js && \
+    echo '    ".wasm": "application/wasm", ".json": "application/json"' >> server.js && \
+    echo '  }[ext] || "text/plain";' >> server.js && \
+    echo '  fs.readFile(filePath, (err, data) => {' >> server.js && \
+    echo '    if (err) { res.writeHead(404); res.end("Not found"); return; }' >> server.js && \
+    echo '    res.writeHead(200, { "Content-Type": contentType });' >> server.js && \
+    echo '    res.end(data);' >> server.js && \
+    echo '  });' >> server.js && \
+    echo '});' >> server.js && \
+    echo 'server.listen(port, "0.0.0.0", () => console.log(`Server running on port ${port}`));' >> server.js
 
 # Expose port
 EXPOSE 3000
 
 # Start command
-CMD ["serve", "-s", "dist", "-l", "3000"] 
+CMD ["node", "server.js"] 
