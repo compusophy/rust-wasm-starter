@@ -1,14 +1,19 @@
 {
-  "name": "rust-wasm-vite",
+  "name": "rust-wasm-websocket-game",
   "version": "1.0.0",
   "type": "module",
+  "description": "Real-time multiplayer game with Rust WebSocket server and WASM client",
   "scripts": {
     "dev": "vite",
     "build": "npm run build-wasm && vite build",
-    "build-frontend": "vite build",
-    "preview": "vite preview --port $PORT --host 0.0.0.0",
-    "start": "vite preview --port $PORT --host 0.0.0.0",
-    "build-wasm": "wasm-pack build --target web --out-dir pkg"
+    "build-wasm": "wasm-pack build --target web --out-dir pkg",
+    "build-server": "cargo build --release --features server --bin server",
+    "start-server": "cargo run --features server --bin server",
+    "dev-server": "cargo run --features server --bin server",
+    "dev-monolith": "npm run build && npm run dev-server",
+    "build-all": "npm run build-wasm && npm run build-server && vite build",
+    "start": "npm run build-all && ./target/release/server",
+    "preview": "vite preview --port $PORT --host 0.0.0.0"
   },
   "devDependencies": {
     "vite": "^5.0.0"
@@ -16,5 +21,13 @@
   "dependencies": {
     "vite-plugin-wasm": "^3.3.0",
     "vite-plugin-top-level-await": "^1.4.1"
-  }
+  },
+  "keywords": [
+    "rust",
+    "wasm",
+    "websocket",
+    "multiplayer",
+    "game",
+    "real-time"
+  ]
 } 

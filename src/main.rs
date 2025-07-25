@@ -1,16 +1,27 @@
 use anyhow::Result;
 use dashmap::DashMap;
+use futures_util::{SinkExt, StreamExt};
 use rand::prelude::*;
-use rcgen::{Certificate, CertificateParams, DistinguishedName};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
+use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
 use tracing::{error, info, warn};
 use uuid::Uuid;
-use wtransport::endpoint::IncomingSession;
-use wtransport::{ClientConfig, Endpoint, ServerConfig};
+use tower::ServiceExt;
+use tower_http::services::ServeDir;
+use tower_http::cors::CorsLayer;
+use hyper::{Request, Response, StatusCode};
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
+use http_body_util::Full;
+use hyper::body::Bytes;
+use std::convert::Infallible;
 
 // Player state
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -20,7 +31,7 @@ pub struct Player {
     pub x: f32,
     pub y: f32,
     pub color: String,
-    pub last_seen: SystemTime,
+    pub last_seen: u64,
 }
 
 impl Player {
@@ -34,10 +45,10 @@ impl Player {
         Self {
             id,
             nickname,
-            x: rng.gen_range(50.0..750.0), // Random starting position
+            x: rng.gen_range(50.0..750.0),
             y: rng.gen_range(50.0..350.0),
             color,
-            last_seen: SystemTime::now(),
+            last_seen: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
         }
     }
 }
@@ -76,36 +87,10 @@ pub enum ServerMessage {
     Error { message: String },
 }
 
-// Chat message history
-#[derive(Clone)]
-pub struct ChatHistory {
-    messages: Arc<std::sync::Mutex<Vec<ServerMessage>>>,
-}
-
-impl ChatHistory {
-    pub fn new() -> Self {
-        Self {
-            messages: Arc::new(std::sync::Mutex::new(Vec::new())),
-        }
-    }
-
-    pub fn add_message(&self, msg: ServerMessage) {
-        let mut messages = self.messages.lock().unwrap();
-        messages.push(msg);
-        if messages.len() > 50 {
-            messages.remove(0);
-        }
-    }
-
-    pub fn get_recent(&self) -> Vec<ServerMessage> {
-        self.messages.lock().unwrap().clone()
-    }
-}
-
 // Game server state
+#[derive(Clone)]
 pub struct GameServer {
-    players: DashMap<String, Player>,
-    chat_history: ChatHistory,
+    players: Arc<DashMap<String, Player>>,
     broadcast_tx: broadcast::Sender<ServerMessage>,
 }
 
@@ -113,8 +98,7 @@ impl GameServer {
     pub fn new() -> Self {
         let (broadcast_tx, _) = broadcast::channel(1000);
         Self {
-            players: DashMap::new(),
-            chat_history: ChatHistory::new(),
+            players: Arc::new(DashMap::new()),
             broadcast_tx,
         }
     }
@@ -140,14 +124,13 @@ impl GameServer {
     }
 
     pub fn move_player(&self, player_id: &str, x: f32, y: f32) -> Result<()> {
-        // Validate bounds
         let x = x.clamp(0.0, 800.0);
         let y = y.clamp(0.0, 400.0);
 
         if let Some(mut player) = self.players.get_mut(player_id) {
             player.x = x;
             player.y = y;
-            player.last_seen = SystemTime::now();
+            player.last_seen = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
             let move_msg = ServerMessage::PlayerMoved {
                 player_id: player_id.to_string(),
@@ -161,10 +144,7 @@ impl GameServer {
 
     pub fn send_chat(&self, player_id: &str, message: String) -> Result<()> {
         if let Some(player) = self.players.get(player_id) {
-            let timestamp = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
             let chat_msg = ServerMessage::ChatMessage {
                 player_id: player_id.to_string(),
@@ -173,7 +153,6 @@ impl GameServer {
                 timestamp,
             };
 
-            self.chat_history.add_message(chat_msg.clone());
             self.broadcast_message(chat_msg)?;
         }
         Ok(())
@@ -188,9 +167,7 @@ impl GameServer {
     }
 
     pub fn broadcast_message(&self, message: ServerMessage) -> Result<()> {
-        if let Err(_) = self.broadcast_tx.send(message) {
-            // No receivers, that's fine
-        }
+        let _ = self.broadcast_tx.send(message);
         Ok(())
     }
 
@@ -199,83 +176,79 @@ impl GameServer {
     }
 }
 
-async fn handle_session(session: IncomingSession, server: Arc<GameServer>) -> Result<()> {
-    let session_request = session.await?;
-    let connection = session_request.accept().await?;
+async fn handle_websocket(
+    stream: tokio::net::TcpStream,
+    addr: SocketAddr,
+    server: GameServer,
+) -> Result<()> {
+    info!("WebSocket connection from: {}", addr);
     
-    info!("✅ WebTransport session established");
+    let ws_stream = accept_async(stream).await?;
+    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
     
-    // Accept bidirectional stream for this client
-    let stream = connection.accept_bi().await?;
     let mut broadcast_rx = server.subscribe();
     let mut player_id: Option<String> = None;
-
-    // Send welcome message with current game state
-    // TODO: Send existing players and chat history
-
+    
     // Handle incoming messages
     let server_clone = server.clone();
-    let (mut send_stream, mut recv_stream) = stream;
-    
-    // Incoming message handler
     let incoming_task = tokio::spawn(async move {
-        loop {
-            let mut buffer = vec![0u8; 1024];
-            match recv_stream.read(&mut buffer).await {
-                Ok(Some(bytes_read)) => {
-                    buffer.truncate(bytes_read);
-                    
-                    // Try to parse as JSON
-                    if let Ok(text) = String::from_utf8(buffer) {
-                        if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
-                            match client_msg {
-                                ClientMessage::Join { nickname } => {
-                                    let player = Player::new(nickname);
-                                    match server_clone.add_player(player) {
-                                        Ok(pid) => {
-                                            player_id = Some(pid.clone());
-                                            // Send welcome message
-                                            let welcome = server_clone.get_welcome_message(&pid);
-                                            let welcome_json = serde_json::to_string(&welcome).unwrap();
-                                            if let Err(e) = send_stream.write_all(welcome_json.as_bytes()).await {
-                                                error!("Failed to send welcome: {}", e);
-                                                break;
-                                            }
+        while let Some(msg) = ws_receiver.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
+                        match client_msg {
+                            ClientMessage::Join { nickname } => {
+                                let player = Player::new(nickname);
+                                match server_clone.add_player(player.clone()) {
+                                    Ok(pid) => {
+                                        player_id = Some(pid.clone());
+                                        let welcome = server_clone.get_welcome_message(&pid);
+                                        let welcome_json = serde_json::to_string(&welcome).unwrap();
+                                        if let Err(e) = ws_sender.send(Message::Text(welcome_json)).await {
+                                            error!("Failed to send welcome: {}", e);
+                                            break;
                                         }
-                                        Err(e) => error!("Failed to add player: {}", e),
+                                        info!("Player {} joined as {}", pid, player.nickname);
                                     }
-                                }
-                                ClientMessage::Move { x, y } => {
-                                    if let Some(ref pid) = player_id {
-                                        if let Err(e) = server_clone.move_player(pid, x, y) {
-                                            error!("Failed to move player: {}", e);
-                                        }
-                                    }
-                                }
-                                ClientMessage::Chat { message } => {
-                                    if let Some(ref pid) = player_id {
-                                        if let Err(e) = server_clone.send_chat(pid, message) {
-                                            error!("Failed to send chat: {}", e);
-                                        }
-                                    }
-                                }
-                                ClientMessage::ChangeNick { nickname } => {
-                                    info!("Nickname change requested: {}", nickname);
+                                    Err(e) => error!("Failed to add player: {}", e),
                                 }
                             }
-                        } else {
-                            warn!("Invalid message format");
+                            ClientMessage::Move { x, y } => {
+                                if let Some(ref pid) = player_id {
+                                    if let Err(e) = server_clone.move_player(pid, x, y) {
+                                        error!("Failed to move player: {}", e);
+                                    }
+                                }
+                            }
+                            ClientMessage::Chat { message } => {
+                                if let Some(ref pid) = player_id {
+                                    if let Err(e) = server_clone.send_chat(pid, message) {
+                                        error!("Failed to send chat: {}", e);
+                                    }
+                                }
+                            }
+                            ClientMessage::ChangeNick { nickname } => {
+                                if let Some(ref pid) = player_id {
+                                    if let Some(mut player) = server_clone.players.get_mut(pid) {
+                                        player.nickname = nickname;
+                                        info!("Player {} changed nickname to {}", pid, player.nickname);
+                                    }
+                                }
+                            }
                         }
+                    } else {
+                        warn!("Invalid message format: {}", text);
                     }
                 }
-                Ok(None) => {
-                    info!("Stream ended");
+                Ok(Message::Close(_)) => {
+                    info!("WebSocket closed by client");
                     break;
                 }
                 Err(e) => {
-                    error!("Stream read error: {}", e);
+                    error!("WebSocket error: {}", e);
                     break;
                 }
+                _ => {}
             }
         }
 
@@ -283,15 +256,17 @@ async fn handle_session(session: IncomingSession, server: Arc<GameServer>) -> Re
         if let Some(pid) = player_id {
             if let Err(e) = server_clone.remove_player(&pid) {
                 error!("Failed to remove player: {}", e);
+            } else {
+                info!("Player {} disconnected", pid);
             }
         }
     });
 
-    // Outgoing message handler
+    // Handle outgoing messages
     let outgoing_task = tokio::spawn(async move {
         while let Ok(server_msg) = broadcast_rx.recv().await {
             let json = serde_json::to_string(&server_msg).unwrap();
-            if let Err(e) = send_stream.write_all(json.as_bytes()).await {
+            if let Err(e) = ws_sender.send(Message::Text(json)).await {
                 error!("Failed to send broadcast message: {}", e);
                 break;
             }
@@ -304,59 +279,124 @@ async fn handle_session(session: IncomingSession, server: Arc<GameServer>) -> Re
         _ = outgoing_task => {},
     }
 
-    info!("Session closed");
+    info!("WebSocket connection {} closed", addr);
     Ok(())
 }
 
-fn generate_certificate() -> Result<Certificate> {
-    let mut params = CertificateParams::new(vec!["localhost".to_string()]);
-    params.distinguished_name = DistinguishedName::new();
-    params.subject_alt_names = vec![
-        rcgen::SanType::DnsName("localhost".to_string()),
-        rcgen::SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))),
-        rcgen::SanType::IpAddress(std::net::IpAddr::V6(std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))),
-    ];
+async fn handle_http_request(
+    req: Request<Incoming>,
+) -> Result<Response<Full<Bytes>>, Infallible> {
+    let static_path = std::env::var("STATIC_PATH").unwrap_or_else(|_| "dist".to_string());
     
-    Ok(Certificate::from_params(params)?)
+    // Create a path for the requested file
+    let path = req.uri().path();
+    let file_path = if path == "/" {
+        format!("{}/index.html", static_path)
+    } else {
+        format!("{}{}", static_path, path)
+    };
+
+    // Try to read the file
+    match tokio::fs::read(&file_path).await {
+        Ok(contents) => {
+            let content_type = match std::path::Path::new(&file_path).extension() {
+                Some(ext) => match ext.to_str() {
+                    Some("html") => "text/html",
+                    Some("css") => "text/css", 
+                    Some("js") => "application/javascript",
+                    Some("wasm") => "application/wasm",
+                    Some("json") => "application/json",
+                    _ => "application/octet-stream",
+                },
+                None => "text/html",
+            };
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", content_type)
+                .header("access-control-allow-origin", "*")
+                .body(Full::new(Bytes::from(contents)))
+                .unwrap())
+        }
+        Err(_) => {
+            // If file not found, serve index.html for SPA routing
+            let index_path = format!("{}/index.html", static_path);
+            let index_content = tokio::fs::read(index_path).await
+                .unwrap_or_else(|_| b"<h1>Error: Frontend not built. Run 'npm run build' first.</h1>".to_vec());
+            
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/html")
+                .header("access-control-allow-origin", "*")
+                .body(Full::new(Bytes::from(index_content)))
+                .unwrap())
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::init();
 
-    let server = Arc::new(GameServer::new());
-    info!("🎮 WebTransport Game Server starting...");
+    let server = GameServer::new();
+    info!("🎮 Rust Monolith Server starting...");
 
-    // Generate self-signed certificate for development
-    let cert = generate_certificate()?;
-    let cert_der = cert.serialize_der()?;
-    let key_der = cert.serialize_private_key_der();
+    let port = std::env::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse::<u16>()
+        .unwrap_or(8080);
+    
+    let ws_port = port + 1; // WebSocket on port + 1
 
-    // Configure WebTransport server
-    let config = ServerConfig::builder()
-        .with_bind_default(4433)
-        .with_identity(&cert_der, &key_der)
-        .build();
+    // Start WebSocket server
+    let ws_server = server.clone();
+    let ws_task = tokio::spawn(async move {
+        let ws_addr: SocketAddr = ([0, 0, 0, 0], ws_port).into();
+        let ws_listener = tokio::net::TcpListener::bind(ws_addr).await.unwrap();
+        info!("🔌 WebSocket server listening on ws://0.0.0.0:{}", ws_port);
 
-    let server_endpoint = Endpoint::server(config)?;
-    info!("🚀 WebTransport server listening on https://localhost:4433");
-    info!("🔒 Using self-signed certificate for development");
-    info!("⚠️  You may need to accept the certificate in your browser");
-
-    // Accept incoming sessions
-    loop {
-        match server_endpoint.accept().await {
-            Ok(incoming_session) => {
-                let server_clone = server.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_session(incoming_session, server_clone).await {
-                        error!("Session error: {}", e);
-                    }
-                });
-            }
-            Err(e) => {
-                error!("Failed to accept session: {}", e);
-            }
+        while let Ok((stream, addr)) = ws_listener.accept().await {
+            let server_clone = ws_server.clone();
+            tokio::spawn(async move {
+                if let Err(e) = handle_websocket(stream, addr, server_clone).await {
+                    error!("WebSocket handler error: {}", e);
+                }
+            });
         }
+    });
+
+    // Start HTTP static file server
+    let http_task = tokio::spawn(async move {
+        let http_addr: SocketAddr = ([0, 0, 0, 0], port).into();
+        let http_listener = tokio::net::TcpListener::bind(http_addr).await.unwrap();
+        info!("🌐 HTTP server listening on http://0.0.0.0:{}", port);
+        info!("📁 Serving static files from ./dist/");
+
+        while let Ok((tcp, _)) = http_listener.accept().await {
+            let io = TokioIo::new(tcp);
+            
+            tokio::task::spawn(async move {
+                let service = service_fn(handle_http_request);
+                
+                if let Err(err) = http1::Builder::new()
+                    .serve_connection(io, service)
+                    .await
+                {
+                    error!("Error serving HTTP connection: {}", err);
+                }
+            });
+        }
+    });
+
+    info!("✅ Server ready!");
+    info!("🎯 Frontend: http://0.0.0.0:{}", port);
+    info!("🔌 WebSocket: ws://0.0.0.0:{}", ws_port);
+
+    // Wait for both servers
+    tokio::select! {
+        _ = ws_task => error!("WebSocket server stopped"),
+        _ = http_task => error!("HTTP server stopped"),
     }
+
+    Ok(())
 } 

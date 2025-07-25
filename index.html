@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎮 Rust Gaming Platform - WebTransport + WASM</title>
+    <title>🎮 Rust Gaming Platform - WebSocket + WASM</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 2rem;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -88,30 +88,56 @@
             font-size: 0.8rem;
             margin-left: 0.5rem;
         }
+        .player {
+            border: 2px solid #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .connection-form {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        #game-area {
+            position: relative;
+            width: 800px;
+            height: 400px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            margin: 1rem 0;
+            border: 2px solid #007acc;
+            overflow: hidden;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎮 Rust Gaming Platform <span class="rust-badge">WebTransport + WASM</span></h1>
+        <h1>🎮 Rust Gaming Platform <span class="rust-badge">WebSocket + WASM</span></h1>
         
         <div class="status" id="wasm-status">
             🔄 Loading Rust WASM module...
         </div>
         
         <div class="demo-section">
-            <h3>🎮 Real-time Multiplayer Game <span class="rust-badge">WebTransport + Rust WASM</span></h3>
-            <button id="connect-btn" onclick="connectToGame()">
-                🔗 Connect to Game Server
-                <span class="htmx-indicator">🔄</span>
-            </button>
+            <h3>🎮 Real-time Multiplayer Game <span class="rust-badge">WebSocket + Rust WASM</span></h3>
+            <div class="connection-form">
+                <input type="text" id="nickname-input" placeholder="Enter your nickname (optional)" style="flex: 1; min-width: 200px;">
+                <button id="connect-btn" onclick="connectToGame()">
+                    🔗 Connect to Game Server
+                    <span class="htmx-indicator">🔄</span>
+                </button>
+                <button onclick="changeNickname()" style="background: #4caf50;">
+                    ✏️ Change Nickname
+                </button>
+            </div>
             <div id="connection-status" class="result">
-                Click connect to join the multiplayer game!
+                Enter a nickname and click connect to join the multiplayer game!
             </div>
         </div>
 
         <div class="demo-section">
             <h3>🎯 Game Area</h3>
-            <div id="game-area" style="position: relative; width: 400px; height: 300px; background: rgba(0,0,0,0.3); border-radius: 10px; margin: 1rem 0; border: 2px solid #007acc;">
+            <div id="game-area">
                 <div id="players-container"></div>
                 <div style="position: absolute; bottom: 10px; left: 10px; font-size: 0.8rem; color: #ccc;">
                     Use WASD or Arrow Keys to move
@@ -119,15 +145,15 @@
             </div>
             <div class="result">
                 <strong>Controls:</strong> WASD or Arrow Keys to move your player<br>
-                <strong>Your Player:</strong> Blue circle<br>
-                <strong>Other Players:</strong> Different colored circles
+                <strong>Players:</strong> Each player has a unique color and nickname<br>
+                <strong>Movement:</strong> Real-time synchronized across all connected players
             </div>
         </div>
 
         <div class="demo-section">
             <h3>💬 Chat <span class="rust-badge">Real-time</span></h3>
             <div id="chat-messages" class="result" style="height: 150px; overflow-y: auto; margin-bottom: 1rem;">
-                Chat messages will appear here...
+                Chat messages will appear here when you connect...
             </div>
             <form onsubmit="sendChat(event)">
                 <input type="text" id="chat-input" placeholder="Type a message..." style="width: 70%;">
@@ -138,11 +164,12 @@
         <div class="demo-section">
             <h3>🚀 Technology Stack</h3>
             <div class="result">
-                <strong>🦀 Frontend:</strong> Rust WASM with WebTransport API<br>
-                <strong>🔗 Transport:</strong> WebTransport (HTTP/3) for ultra-low latency<br>
-                <strong>🎯 Serialization:</strong> Binary (bincode) for maximum performance<br>
-                <strong>🌐 UI Updates:</strong> HTMX + Rust-generated HTML<br>
-                <strong>📝 Console:</strong> Check browser console for connection logs
+                <strong>🦀 Frontend:</strong> Rust WASM with WebSocket API<br>
+                <strong>🔗 Transport:</strong> WebSocket (TCP) for reliable real-time communication<br>
+                <strong>🎯 Serialization:</strong> JSON for human-readable debugging<br>
+                <strong>🌐 UI Updates:</strong> Direct DOM manipulation from Rust WASM<br>
+                <strong>📝 Console:</strong> Check browser console for connection logs<br>
+                <strong>🎮 Server:</strong> Rust WebSocket server with tokio-tungstenite
             </div>
         </div>
     </div>

@@ -1,71 +1,49 @@
-# Use latest Rust image
-FROM rust:latest as rust-builder
+# Build stage
+FROM rust:1.75 as builder
 
-# Install wasm-pack
+# Install wasm-pack for building the WASM client
 RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-# Set working directory
+# Install Node.js for frontend build
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs
+
 WORKDIR /app
 
-# Copy Rust files
-COPY Cargo.toml ./
-COPY src/ ./src/
+# Copy all source files
+COPY . .
 
-# Build WASM (will regenerate Cargo.lock with correct version)
+# Build the WASM client
 RUN wasm-pack build --target web --out-dir pkg
 
-# Use Node.js for the frontend build
-FROM node:18-alpine as node-builder
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
+# Install frontend dependencies and build
 RUN npm ci
+RUN npm run build
 
-# Copy source files first
-COPY index.html ./
-COPY main.js ./
-COPY vite.config.js ./
+# Build the Rust server
+RUN cargo build --release --features server --bin server
 
-# Copy WASM build from rust-builder stage
-COPY --from=rust-builder /app/pkg ./pkg
+# Runtime stage
+FROM debian:bookworm-slim
 
-# Build the frontend (skip wasm build since we already have pkg/)
-RUN npx vite build
-
-# Production stage with simple HTTP server
-FROM node:18-alpine
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy built files
-COPY --from=node-builder /app/dist ./dist
+# Copy the built server binary
+COPY --from=builder /app/target/release/server /usr/local/bin/server
 
-# Create simple server script
-RUN echo 'const http = require("http");' > server.js && \
-    echo 'const fs = require("fs");' >> server.js && \
-    echo 'const path = require("path");' >> server.js && \
-    echo 'const port = process.env.PORT || 3000;' >> server.js && \
-    echo 'const server = http.createServer((req, res) => {' >> server.js && \
-    echo '  let filePath = path.join(__dirname, "dist", req.url === "/" ? "index.html" : req.url);' >> server.js && \
-    echo '  const ext = path.extname(filePath);' >> server.js && \
-    echo '  const contentType = {' >> server.js && \
-    echo '    ".html": "text/html", ".js": "application/javascript", ".css": "text/css",' >> server.js && \
-    echo '    ".wasm": "application/wasm", ".json": "application/json"' >> server.js && \
-    echo '  }[ext] || "text/plain";' >> server.js && \
-    echo '  fs.readFile(filePath, (err, data) => {' >> server.js && \
-    echo '    if (err) { res.writeHead(404); res.end("Not found"); return; }' >> server.js && \
-    echo '    res.writeHead(200, { "Content-Type": contentType });' >> server.js && \
-    echo '    res.end(data);' >> server.js && \
-    echo '  });' >> server.js && \
-    echo '});' >> server.js && \
-    echo 'server.listen(port, "0.0.0.0", () => console.log(`Server running on port ${port}`));' >> server.js
+# Copy the built frontend files
+COPY --from=builder /app/dist ./dist
 
-# Expose port
-EXPOSE 3000
+# Set environment variables
+ENV STATIC_PATH=./dist
 
-# Start command
-CMD ["node", "server.js"] 
+# Expose the port (Railway will set PORT env var)
+EXPOSE 8080
+
+# Start the server
+CMD ["server"] 
