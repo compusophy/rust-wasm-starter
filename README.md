@@ -1,6 +1,6 @@
 # 🦀 Rust WASM + HTMX + Vite Hot Reload Stable
 
-A simple **Rust WebAssembly** project with HTMX for clean DOM interactions and Vite hot reloading for an excellent development experience.
+A simple **Rust WebAssembly2** project with HTMX for clean DOM interactions and Vite hot reloading for an excellent development experience.
 
 ## What This Actually Does
 

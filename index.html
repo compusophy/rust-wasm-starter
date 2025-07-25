@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rust WASM + HTMX + Vite</title>
+    <title>🎮 Rust Gaming Platform - WebTransport + WASM</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <style>
         body {
@@ -92,59 +92,57 @@
 </head>
 <body>
     <div class="container">
-        <h1>🦀 Rust WASM + HTMX + Vite <span class="rust-badge">RUST POWERED</span></h1>
+        <h1>🎮 Rust Gaming Platform <span class="rust-badge">WebTransport + WASM</span></h1>
         
         <div class="status" id="wasm-status">
             🔄 Loading Rust WASM module...
         </div>
         
         <div class="demo-section">
-            <h3>Greeting Demo <span class="rust-badge">Rust Function</span></h3>
-            <form hx-post="/greet" hx-target="#greet-result" hx-trigger="submit">
-                <input type="text" name="name" placeholder="Enter your name" value="World" required>
-                <button type="submit">
-                    Say Hello!
-                    <span class="htmx-indicator">🔄</span>
-                </button>
-            </form>
-            <div id="greet-result" class="result">
-                Results will appear here...
-            </div>
-        </div>
-
-        <div class="demo-section">
-            <h3>Math Demo <span class="rust-badge">Rust Function</span></h3>
-            <form hx-post="/add" hx-target="#math-result" hx-trigger="submit">
-                <input type="number" name="num1" placeholder="First number" value="5" required>
-                <input type="number" name="num2" placeholder="Second number" value="3" required>
-                <button type="submit">
-                    Add Numbers
-                    <span class="htmx-indicator">🔄</span>
-                </button>
-            </form>
-            <div id="math-result" class="result">
-                Results will appear here...
-            </div>
-        </div>
-
-        <div class="demo-section">
-            <h3>Message Demo <span class="rust-badge">Rust Function</span></h3>
-            <button hx-post="/message" hx-target="#message-result" hx-trigger="click">
-                Get Message from Rust
+            <h3>🎮 Real-time Multiplayer Game <span class="rust-badge">WebTransport + Rust WASM</span></h3>
+            <button id="connect-btn" onclick="connectToGame()">
+                🔗 Connect to Game Server
                 <span class="htmx-indicator">🔄</span>
             </button>
-            <div id="message-result" class="result">
-                Results will appear here...
+            <div id="connection-status" class="result">
+                Click connect to join the multiplayer game!
             </div>
         </div>
 
         <div class="demo-section">
-            <h3>Development Info</h3>
+            <h3>🎯 Game Area</h3>
+            <div id="game-area" style="position: relative; width: 400px; height: 300px; background: rgba(0,0,0,0.3); border-radius: 10px; margin: 1rem 0; border: 2px solid #007acc;">
+                <div id="players-container"></div>
+                <div style="position: absolute; bottom: 10px; left: 10px; font-size: 0.8rem; color: #ccc;">
+                    Use WASD or Arrow Keys to move
+                </div>
+            </div>
             <div class="result">
-                <strong>🦀 Rust Functions:</strong> greet(), add(), get_message()<br>
-                <strong>🔥 Hot Reload:</strong> Modify Rust → run `npm run build-wasm` → auto-refresh<br>
-                <strong>🚀 HTMX:</strong> No JavaScript DOM manipulation needed!<br>
-                <strong>📝 Console:</strong> Check browser console for Rust logs
+                <strong>Controls:</strong> WASD or Arrow Keys to move your player<br>
+                <strong>Your Player:</strong> Blue circle<br>
+                <strong>Other Players:</strong> Different colored circles
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h3>💬 Chat <span class="rust-badge">Real-time</span></h3>
+            <div id="chat-messages" class="result" style="height: 150px; overflow-y: auto; margin-bottom: 1rem;">
+                Chat messages will appear here...
+            </div>
+            <form onsubmit="sendChat(event)">
+                <input type="text" id="chat-input" placeholder="Type a message..." style="width: 70%;">
+                <button type="submit" style="width: 25%;">Send</button>
+            </form>
+        </div>
+
+        <div class="demo-section">
+            <h3>🚀 Technology Stack</h3>
+            <div class="result">
+                <strong>🦀 Frontend:</strong> Rust WASM with WebTransport API<br>
+                <strong>🔗 Transport:</strong> WebTransport (HTTP/3) for ultra-low latency<br>
+                <strong>🎯 Serialization:</strong> Binary (bincode) for maximum performance<br>
+                <strong>🌐 UI Updates:</strong> HTMX + Rust-generated HTML<br>
+                <strong>📝 Console:</strong> Check browser console for connection logs
             </div>
         </div>
     </div>

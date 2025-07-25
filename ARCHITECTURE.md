@@ -28,7 +28,7 @@ A web-native gaming platform with built-in streaming where:
 - TLS certificate complexity for local dev
 - Railway deployment compatibility
 
-**Decision Point:** Start with WebSockets, migrate to WebTransport later?
+**Decision:** Going with WebTransport first for maximum performance!
 
 ### 2. **Real-time Architecture**
 **Game Data Flow:**
@@ -58,23 +58,25 @@ Voice/Video P2P between Players → Spectators (WebRTC)
 
 ## Phased Implementation Plan
 
-### Phase 1: Foundation (WebSockets)
-**Goal:** Get basic real-time communication working
+### Phase 1: Foundation (WebTransport)
+**Goal:** Get basic real-time communication working with cutting-edge transport
 
-1. **Simple WebSocket Server**
-   - Echo server for testing
-   - Basic connection management
+1. **WebTransport Server**
+   - Echo server for testing with wtransport crate
+   - Connection management with HTTP/3
+   - TLS certificate setup for development
    - Deploy to Railway
 
-2. **Frontend WebSocket Client**
-   - Connect from WASM to server
-   - Send/receive simple messages
+2. **Frontend WebTransport Client**
+   - Connect from WASM to server using WebTransport API
+   - Send/receive binary messages for low latency
    - Integrate with existing HTMX UI
+   - Graceful fallback detection
 
 3. **Basic Game Loop**
-   - Player position updates
+   - Player position updates via WebTransport streams
    - Server broadcasts to all clients
-   - Simple 2D movement demo
+   - Simple 2D movement demo with minimal latency
 
 ### Phase 2: Game Features
 **Goal:** Actual gameplay mechanics
@@ -125,25 +127,25 @@ Voice/Video P2P between Players → Spectators (WebRTC)
    - Screen sharing capability
    - Bandwidth optimization
 
-### Phase 5: WebTransport Migration
-**Goal:** Upgrade to cutting-edge transport
+### Phase 5: Advanced Features
+**Goal:** Polish and performance optimization
 
-1. **WebTransport Server**
-   - Parallel implementation
-   - Feature parity with WebSocket version
-   - Performance comparison
+1. **Performance Optimization**
+   - Binary serialization tuning
+   - Connection pooling
+   - Bandwidth optimization
 
-2. **Frontend Updates**
-   - WebTransport client in WASM
-   - Graceful fallback to WebSockets
-   - Browser compatibility detection
+2. **Browser Compatibility**
+   - WebSocket fallback for older browsers
+   - Feature detection
+   - Progressive enhancement
 
 ## Technology Decisions
 
 ### Transport Layer
-- **Start**: WebSockets (universal compatibility)
-- **Future**: WebTransport (performance upgrade)
-- **Fallback**: Always maintain WebSocket support
+- **Primary**: WebTransport (maximum performance for gaming)
+- **Fallback**: WebSockets for older browsers (implement later if needed)
+- **Development**: Self-signed certificates for local testing
 
 ### Serialization
 - **Game Data**: Binary (bincode) for performance
@@ -154,7 +156,7 @@ Voice/Video P2P between Players → Spectators (WebRTC)
 - **Keep**: Rust WASM + HTMX hybrid
 - **Game Logic**: Pure WASM for performance
 - **UI Updates**: HTMX for simplicity
-- **Real-time**: Direct WebSocket/WebTransport from WASM
+- **Real-time**: Direct WebTransport from WASM for maximum performance
 
 ### Backend Architecture
 - **Language**: Rust (consistent with frontend)
