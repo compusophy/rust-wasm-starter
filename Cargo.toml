@@ -41,6 +41,7 @@ features = [
   "Element",
   "HtmlElement",
   "Window",
+  "Location",
   "WebSocket",
   "MessageEvent",
   "CloseEvent",

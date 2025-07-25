@@ -93,16 +93,15 @@ impl GameClient {
         console_log!("Connecting to WebSocket server...");
         
         // Create WebSocket connection - connect to port 8081 for WebSocket
-        let ws_url = std::env::var("WS_URL").unwrap_or_else(|_| {
-            // Default to localhost:8081 for development, use window.location for production
-            if let Some(window) = web_sys::window() {
-                if let Some(location) = window.location().hostname().ok() {
-                    if location == "localhost" || location == "127.0.0.1" {
+        let ws_url = if let Some(window) = web_sys::window() {
+            if let Some(location) = window.location() {
+                if let (Ok(hostname), Ok(protocol)) = (location.hostname(), location.protocol()) {
+                    if hostname == "localhost" || hostname == "127.0.0.1" {
                         "ws://127.0.0.1:8081".to_string()
                     } else {
                         // For production, derive WebSocket URL from current page
-                        let protocol = if window.location().protocol().unwrap_or_default() == "https:" { "wss" } else { "ws" };
-                        let port = if let Ok(port_str) = window.location().port() {
+                        let ws_protocol = if protocol == "https:" { "wss" } else { "ws" };
+                        let port = if let Ok(port_str) = location.port() {
                             if !port_str.is_empty() {
                                 let port: u16 = port_str.parse().unwrap_or(80);
                                 (port + 1).to_string()
@@ -112,7 +111,7 @@ impl GameClient {
                         } else {
                             "8081".to_string()
                         };
-                        format!("{}://{}:{}", protocol, location, port)
+                        format!("{}://{}:{}", ws_protocol, hostname, port)
                     }
                 } else {
                     "ws://127.0.0.1:8081".to_string()
@@ -120,7 +119,9 @@ impl GameClient {
             } else {
                 "ws://127.0.0.1:8081".to_string()
             }
-        });
+        } else {
+            "ws://127.0.0.1:8081".to_string()
+        };
         
         console_log!("Connecting to WebSocket: {}", ws_url);
         let ws = WebSocket::new(&ws_url)?;
@@ -254,7 +255,7 @@ fn add_chat_message(nickname: &str, message: &str, timestamp: u64) {
         if let Some(document) = window.document() {
             if let Some(chat_messages) = document.get_element_by_id("chat-messages") {
                 let time = js_sys::Date::new(&JsValue::from_f64(timestamp as f64 * 1000.0));
-                let time_str = time.to_locale_time_string("en-US", &JsValue::NULL);
+                let time_str = time.to_locale_time_string("en-US");
                 
                 let current_html = chat_messages.inner_html();
                 let new_message = format!(
