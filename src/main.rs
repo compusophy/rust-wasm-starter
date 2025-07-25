@@ -174,14 +174,18 @@ impl GameServer {
     }
 }
 
-async fn handle_websocket(
-    stream: tokio::net::TcpStream,
+async fn handle_websocket_upgrade(
+    stream: hyper::upgrade::Upgraded,
     addr: SocketAddr,
     server: GameServer,
 ) -> Result<()> {
     info!("WebSocket connection from: {}", addr);
     
-    let ws_stream = accept_async(stream).await?;
+    let ws_stream = tokio_tungstenite::WebSocketStream::from_raw_socket(
+        TokioIo::new(stream),
+        tokio_tungstenite::tungstenite::protocol::Role::Server,
+        None,
+    ).await;
     let (ws_sender, mut ws_receiver) = ws_stream.split();
     
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
@@ -345,11 +349,10 @@ async fn handle_request(
         
         match hyper::upgrade::on(&mut req).await {
             Ok(upgraded) => {
-                let stream = TokioIo::new(upgraded);
                 let addr = "0.0.0.0:80".parse().unwrap(); // Placeholder
                 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_websocket(stream.into_inner(), addr, server).await {
+                    if let Err(e) = handle_websocket_upgrade(upgraded, addr, server).await {
                         error!("WebSocket handler error: {}", e);
                     }
                 });
