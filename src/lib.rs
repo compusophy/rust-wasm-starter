@@ -103,7 +103,7 @@ impl GameClient {
         let options = js_sys::Object::new();
         js_sys::Reflect::set(&options, &"allowPooling".into(), &false.into())?;
         
-        let transport = WebTransport::new("https://localhost:4433", &options);
+        let transport = WebTransport::new("https://rust-wtransport-server-production.up.railway.app", &options);
         
         // Wait for connection to be ready
         JsFuture::from(transport.ready()).await?;
