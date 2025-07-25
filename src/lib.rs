@@ -94,27 +94,24 @@ impl GameClient {
         
         // Create WebSocket connection - connect to port 8081 for WebSocket
         let ws_url = if let Some(window) = web_sys::window() {
-            if let Some(location) = window.location() {
-                if let (Ok(hostname), Ok(protocol)) = (location.hostname(), location.protocol()) {
-                    if hostname == "localhost" || hostname == "127.0.0.1" {
-                        "ws://127.0.0.1:8081".to_string()
-                    } else {
-                        // For production, derive WebSocket URL from current page
-                        let ws_protocol = if protocol == "https:" { "wss" } else { "ws" };
-                        let port = if let Ok(port_str) = location.port() {
-                            if !port_str.is_empty() {
-                                let port: u16 = port_str.parse().unwrap_or(80);
-                                (port + 1).to_string()
-                            } else {
-                                "8081".to_string()
-                            }
+            let location = window.location();
+            if let (Ok(hostname), Ok(protocol)) = (location.hostname(), location.protocol()) {
+                if hostname == "localhost" || hostname == "127.0.0.1" {
+                    "ws://127.0.0.1:8081".to_string()
+                } else {
+                    // For production, derive WebSocket URL from current page
+                    let ws_protocol = if protocol == "https:" { "wss" } else { "ws" };
+                    let port = if let Ok(port_str) = location.port() {
+                        if !port_str.is_empty() {
+                            let port: u16 = port_str.parse().unwrap_or(80);
+                            (port + 1).to_string()
                         } else {
                             "8081".to_string()
-                        };
-                        format!("{}://{}:{}", ws_protocol, hostname, port)
-                    }
-                } else {
-                    "ws://127.0.0.1:8081".to_string()
+                        }
+                    } else {
+                        "8081".to_string()
+                    };
+                    format!("{}://{}:{}", ws_protocol, hostname, port)
                 }
             } else {
                 "ws://127.0.0.1:8081".to_string()
