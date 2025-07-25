@@ -92,32 +92,31 @@ impl GameClient {
     fn connect(&mut self, nickname: Option<String>) -> Result<(), JsValue> {
         console_log!("Connecting to WebSocket server...");
         
-        // Create WebSocket connection - connect to port 8081 for WebSocket
+        // Create WebSocket connection - connect to /ws endpoint on same port
         let ws_url = if let Some(window) = web_sys::window() {
             let location = window.location();
             if let (Ok(hostname), Ok(protocol)) = (location.hostname(), location.protocol()) {
                 if hostname == "localhost" || hostname == "127.0.0.1" {
-                    "ws://127.0.0.1:8081".to_string()
+                    "ws://127.0.0.1:8080/ws".to_string()
                 } else {
-                    // For production, derive WebSocket URL from current page
+                    // For production, use same domain with /ws endpoint
                     let ws_protocol = if protocol == "https:" { "wss" } else { "ws" };
                     let port = if let Ok(port_str) = location.port() {
                         if !port_str.is_empty() {
-                            let port: u16 = port_str.parse().unwrap_or(80);
-                            (port + 1).to_string()
+                            format!(":{}", port_str)
                         } else {
-                            "8081".to_string()
+                            "".to_string()
                         }
                     } else {
-                        "8081".to_string()
+                        "".to_string()
                     };
-                    format!("{}://{}:{}", ws_protocol, hostname, port)
+                    format!("{}://{}{}/ws", ws_protocol, hostname, port)
                 }
             } else {
-                "ws://127.0.0.1:8081".to_string()
+                "ws://127.0.0.1:8080/ws".to_string()
             }
         } else {
-            "ws://127.0.0.1:8081".to_string()
+            "ws://127.0.0.1:8080/ws".to_string()
         };
         
         console_log!("Connecting to WebSocket: {}", ws_url);

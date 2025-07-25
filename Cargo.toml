@@ -21,6 +21,8 @@ js-sys = "0.3"
 # Server dependencies (only for binary builds)
 tokio = { version = "1.0", features = ["full"], optional = true }
 tokio-tungstenite = { version = "0.21", optional = true }
+sha1 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
 futures-util = { version = "0.3", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }
@@ -54,7 +56,9 @@ features = [
 default = []
 server = [
   "tokio", 
-  "tokio-tungstenite", 
+  "tokio-tungstenite",
+  "sha1",
+  "base64", 
   "futures-util", 
   "tracing", 
   "tracing-subscriber", 

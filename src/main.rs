@@ -10,7 +10,7 @@ use tokio::sync::broadcast;
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
 use tracing::{error, info, warn};
 use uuid::Uuid;
-use hyper::{Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode, Method};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -18,6 +18,8 @@ use hyper_util::rt::TokioIo;
 use http_body_util::Full;
 use hyper::body::Bytes;
 use std::convert::Infallible;
+use sha1::{Sha1, Digest};
+use base64::{Engine as _, engine::general_purpose};
 
 // Player state
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -304,12 +306,71 @@ async fn handle_websocket(
     Ok(())
 }
 
-async fn handle_http_request(
-    req: Request<Incoming>,
+// WebSocket magic string as defined in RFC 6455
+const WEBSOCKET_MAGIC_STRING: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+// Check if this is a WebSocket upgrade request
+fn is_websocket_upgrade(req: &Request<Incoming>) -> bool {
+    req.method() == Method::GET &&
+    req.headers().get("upgrade").map_or(false, |h| h == "websocket") &&
+    req.headers().get("connection").map_or(false, |h| h.to_str().unwrap_or("").to_lowercase().contains("upgrade")) &&
+    req.headers().get("sec-websocket-key").is_some()
+}
+
+// Calculate WebSocket accept key as per RFC 6455
+fn calculate_websocket_accept(key: &str) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(key.as_bytes());
+    hasher.update(WEBSOCKET_MAGIC_STRING.as_bytes());
+    let hash = hasher.finalize();
+    general_purpose::STANDARD.encode(&hash)
+}
+
+async fn handle_request(
+    mut req: Request<Incoming>,
+    server: GameServer,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
+    
+    // Handle WebSocket upgrade
+    if req.uri().path() == "/ws" && is_websocket_upgrade(&req) {
+        info!("WebSocket upgrade request received");
+        
+        // Get the WebSocket key for handshake
+        let ws_key = req.headers()
+            .get("sec-websocket-key")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        
+        let accept_key = calculate_websocket_accept(ws_key);
+        
+        match hyper::upgrade::on(&mut req).await {
+            Ok(upgraded) => {
+                let stream = TokioIo::new(upgraded);
+                let addr = "0.0.0.0:80".parse().unwrap(); // Placeholder
+                
+                tokio::spawn(async move {
+                    if let Err(e) = handle_websocket(stream.into_inner(), addr, server).await {
+                        error!("WebSocket handler error: {}", e);
+                    }
+                });
+
+                return Ok(Response::builder()
+                    .status(StatusCode::SWITCHING_PROTOCOLS)
+                    .header("upgrade", "websocket")
+                    .header("connection", "upgrade")
+                    .header("sec-websocket-accept", accept_key)
+                    .body(Full::new(Bytes::new()))
+                    .unwrap());
+            }
+            Err(e) => {
+                error!("WebSocket upgrade failed: {}", e);
+            }
+        }
+    }
+
+    // Handle regular HTTP requests
     let static_path = std::env::var("STATIC_PATH").unwrap_or_else(|_| "dist".to_string());
     
-    // Create a path for the requested file
     let path = req.uri().path();
     let file_path = if path == "/" {
         format!("{}/index.html", static_path)
@@ -317,7 +378,6 @@ async fn handle_http_request(
         format!("{}{}", static_path, path)
     };
 
-    // Try to read the file
     match tokio::fs::read(&file_path).await {
         Ok(contents) => {
             let content_type = match std::path::Path::new(&file_path).extension() {
@@ -340,7 +400,6 @@ async fn handle_http_request(
                 .unwrap())
         }
         Err(_) => {
-            // If file not found, serve index.html for SPA routing
             let index_path = format!("{}/index.html", static_path);
             let index_content = tokio::fs::read(index_path).await
                 .unwrap_or_else(|_| b"<h1>Error: Frontend not built. Run 'npm run build' first.</h1>".to_vec());
@@ -367,56 +426,28 @@ async fn main() -> Result<()> {
         .parse::<u16>()
         .unwrap_or(8080);
     
-    let ws_port = port + 1; // WebSocket on port + 1
+    let addr: SocketAddr = ([0, 0, 0, 0], port).into();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    
+    info!("🚀 Server listening on http://0.0.0.0:{}", port);
+    info!("🌐 HTTP static files served from /");
+    info!("🔌 WebSocket endpoint: /ws (same port)");
 
-    // Start WebSocket server
-    let ws_server = server.clone();
-    let ws_task = tokio::spawn(async move {
-        let ws_addr: SocketAddr = ([0, 0, 0, 0], ws_port).into();
-        let ws_listener = tokio::net::TcpListener::bind(ws_addr).await.unwrap();
-        info!("🔌 WebSocket server listening on ws://0.0.0.0:{}", ws_port);
-
-        while let Ok((stream, addr)) = ws_listener.accept().await {
-            let server_clone = ws_server.clone();
-            tokio::spawn(async move {
-                if let Err(e) = handle_websocket(stream, addr, server_clone).await {
-                    error!("WebSocket handler error: {}", e);
-                }
-            });
-        }
-    });
-
-    // Start HTTP static file server
-    let http_task = tokio::spawn(async move {
-        let http_addr: SocketAddr = ([0, 0, 0, 0], port).into();
-        let http_listener = tokio::net::TcpListener::bind(http_addr).await.unwrap();
-        info!("🌐 HTTP server listening on http://0.0.0.0:{}", port);
-        info!("📁 Serving static files from ./dist/");
-
-        while let Ok((tcp, _)) = http_listener.accept().await {
-            let io = TokioIo::new(tcp);
+    while let Ok((tcp, _)) = listener.accept().await {
+        let io = TokioIo::new(tcp);
+        let server_clone = server.clone();
+        
+        tokio::task::spawn(async move {
+            let service = service_fn(move |req| handle_request(req, server_clone.clone()));
             
-            tokio::task::spawn(async move {
-                let service = service_fn(handle_http_request);
-                
-                if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service)
-                    .await
-                {
-                    error!("Error serving HTTP connection: {}", err);
-                }
-            });
-        }
-    });
-
-    info!("✅ Server ready!");
-    info!("🎯 Frontend: http://0.0.0.0:{}", port);
-    info!("🔌 WebSocket: ws://0.0.0.0:{}", ws_port);
-
-    // Wait for both servers
-    tokio::select! {
-        _ = ws_task => error!("WebSocket server stopped"),
-        _ = http_task => error!("HTTP server stopped"),
+            if let Err(err) = http1::Builder::new()
+                .serve_connection(io, service)
+                .with_upgrades()
+                .await
+            {
+                error!("Error serving connection: {}", err);
+            }
+        });
     }
 
     Ok(())
