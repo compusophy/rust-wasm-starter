@@ -4,16 +4,12 @@ use futures_util::{SinkExt, StreamExt};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
 use tracing::{error, info, warn};
 use uuid::Uuid;
-use tower::ServiceExt;
-use tower_http::services::ServeDir;
-use tower_http::cors::CorsLayer;
 use hyper::{Request, Response, StatusCode};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
@@ -184,13 +180,15 @@ async fn handle_websocket(
     info!("WebSocket connection from: {}", addr);
     
     let ws_stream = accept_async(stream).await?;
-    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+    let (ws_sender, mut ws_receiver) = ws_stream.split();
     
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
     let mut broadcast_rx = server.subscribe();
     let mut player_id: Option<String> = None;
     
     // Handle incoming messages
     let server_clone = server.clone();
+    let tx_clone = tx.clone();
     let incoming_task = tokio::spawn(async move {
         while let Some(msg) = ws_receiver.next().await {
             match msg {
@@ -204,7 +202,7 @@ async fn handle_websocket(
                                         player_id = Some(pid.clone());
                                         let welcome = server_clone.get_welcome_message(&pid);
                                         let welcome_json = serde_json::to_string(&welcome).unwrap();
-                                        if let Err(e) = ws_sender.send(Message::Text(welcome_json)).await {
+                                        if let Err(e) = tx_clone.send(Message::Text(welcome_json)) {
                                             error!("Failed to send welcome: {}", e);
                                             break;
                                         }
@@ -264,11 +262,34 @@ async fn handle_websocket(
 
     // Handle outgoing messages
     let outgoing_task = tokio::spawn(async move {
-        while let Ok(server_msg) = broadcast_rx.recv().await {
-            let json = serde_json::to_string(&server_msg).unwrap();
-            if let Err(e) = ws_sender.send(Message::Text(json)).await {
-                error!("Failed to send broadcast message: {}", e);
-                break;
+        let mut ws_sender = ws_sender;
+        loop {
+            tokio::select! {
+                // Send broadcast messages
+                server_msg = broadcast_rx.recv() => {
+                    match server_msg {
+                        Ok(msg) => {
+                            let json = serde_json::to_string(&msg).unwrap();
+                            if let Err(e) = ws_sender.send(Message::Text(json)).await {
+                                error!("Failed to send broadcast message: {}", e);
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+                // Send direct messages
+                direct_msg = rx.recv() => {
+                    match direct_msg {
+                        Some(msg) => {
+                            if let Err(e) = ws_sender.send(msg).await {
+                                error!("Failed to send direct message: {}", e);
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
             }
         }
     });
@@ -336,7 +357,7 @@ async fn handle_http_request(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::init();
+    tracing_subscriber::fmt::init();
 
     let server = GameServer::new();
     info!("🎮 Rust Monolith Server starting...");
